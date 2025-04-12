@@ -28,13 +28,14 @@ jobs:
 
       - name: Run chart generation script
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPOS: 'https://github.com/iawooo/BookNav' # 初始项目，可在 Secrets 中覆盖
         run: node generate_star_charts.js
 
       - name: Commit and push changes
         run: |
           git config user.name "GitHub Action"
           git config user.email "action@github.com"
-          git add images/
-          git commit -m "Update star charts" || echo "No changes to commit"
+          git add images/ README.md
+          git commit -m "Update star charts and README" || echo "No changes to commit"
           git push
