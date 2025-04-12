@@ -4,50 +4,36 @@ import fs from 'fs/promises';
 import fetch from 'node-fetch';
 import path from 'path';
 
-// 获取用户的所有公开仓库
-async function fetchUserRepos(username) {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    console.error('❌ 缺少 GITHUB_TOKEN 环境变量，请设置后再运行！');
+// 解析环境变量中的项目地址
+function parseRepoUrls() {
+  const repoUrls = process.env.REPOS ? process.env.REPOS.split(',').map(url => url.trim()) : [];
+  if (repoUrls.length === 0) {
+    console.error('❌ 环境变量 REPOS 未设置或为空，请提供项目地址！');
     return [];
   }
 
-  let repos = [];
-  let page = 1;
-  const perPage = 100;
-
-  while (true) {
-    console.log(`📡 正在获取用户 ${username} 的第 ${page} 页仓库...`);
-    const response = await fetch(
-      `https://api.github.com/users/${username}/repos?per_page=${perPage}&page=${page}&sort=updated`,
-      {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'StarChartGenerator',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ 获取仓库列表失败: ${response.status} ${response.statusText} - ${errorText}`);
-      return [];
+  // 转换为 repo 格式（例如 "iawooo/BookNav"）
+  const repos = repoUrls.map(url => {
+    const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+    if (!match) {
+      console.error(`❌ 无效的项目地址: ${url}`);
+      return null;
     }
+    return `${match[1]}/${match[2]}`;
+  }).filter(repo => repo);
 
-    const data = await response.json();
-    repos = repos.concat(data.map(repo => repo.full_name));
-    if (data.length < perPage) break;
-    page++;
-  }
-
-  console.log(`✅ 成功获取 ${repos.length} 个仓库`);
+  console.log(`✅ 解析到 ${repos.length} 个有效项目:`, repos);
   return repos;
 }
 
 // 获取单个仓库的星标数据
 async function fetchStargazers(repo) {
-  const token = process.env.GITHUB_TOKEN;
+  const token = process.env.GH_TOKEN;
+  if (!token) {
+    console.error('❌ 缺少 GH_TOKEN 环境变量，请设置后再运行！');
+    return [];
+  }
+
   let allStargazers = [];
   let page = 1;
   const perPage = 100;
@@ -255,15 +241,14 @@ async function generateChartForRepo(repo) {
   const filePath = path.join('images', `${repoName}_star_chart.png`);
   await fs.writeFile(filePath, imageBuffer);
   console.log(`✅ ${repo} 图表生成成功: ${filePath}`);
-  return filePath;
+  return { repo, filePath };
 }
 
-// 主函数：为所有项目生成图表
+// 主函数：为所有指定项目生成图表
 async function generateAllCharts() {
-  const username = 'iawooo'; // 你的 GitHub 用户名
-  const repos = await fetchUserRepos(username);
+  const repos = parseRepoUrls();
   if (repos.length === 0) {
-    console.error('❌ 没有获取到仓库，无法生成图表');
+    console.error('❌ 没有有效项目，无法生成图表');
     return;
   }
 
@@ -276,10 +261,22 @@ async function generateAllCharts() {
   }
 
   // 为每个项目生成图表
+  const results = [];
   for (const repo of repos) {
     console.log(`🚀 开始处理 ${repo}`);
-    await generateChartForRepo(repo);
+    const result = await generateChartForRepo(repo);
+    if (result) results.push(result);
   }
+
+  // 更新 README.md
+  let readmeContent = `# Star Charts\n\nA collection of star history charts for my GitHub projects, automatically updated daily.\n\n## Projects\n\n`;
+  for (const { repo, filePath } of results) {
+    const repoName = repo.split('/')[1];
+    readmeContent += `### ${repoName}\n[![${repoName} Star Chart](${filePath})](https://github.com/${repo})\n\n`;
+  }
+  readmeContent += `## License\nThis project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.\n\nIf you fork, modify, or redistribute this project, please include a reference to the original repository:  \nhttps://github.com/iawooo/StarCharts\n`;
+  await fs.writeFile('README.md', readmeContent);
+  console.log('✅ README.md 已更新');
 }
 
 // 运行脚本
