@@ -1,0 +1,40 @@
+name: Update Star Charts
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天凌晨 UTC 时间运行
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  update-charts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Run chart generation script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node generate_star_charts.js
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
+          git add images/
+          git commit -m "Update star charts" || echo "No changes to commit"
+          git push
