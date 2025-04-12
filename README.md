@@ -7,6 +7,9 @@ A collection of star history charts for my GitHub projects, automatically update
 ### BookNav
 [![BookNav Star Chart](images/booknav_star_chart.png)](https://github.com/iawooo/BookNav)
 
+### ctt
+[![ctt Star Chart](images/ctt_star_chart.png)](https://github.com/iawooo/ctt)
+
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
