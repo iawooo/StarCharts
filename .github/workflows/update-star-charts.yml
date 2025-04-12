@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_TOKEN }} # 使用 GH_TOKEN 检出仓库
+          token: ${{ secrets.GH_TOKEN }} # 使用 PAT 检出
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -31,7 +31,7 @@ jobs:
       - name: Run chart generation script
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          REPOS: 'https://github.com/iawooo/BookNav' # 默认项目，可在 Secrets 覆盖
+          REPOS: ${{ secrets.REPOS }} # 从 Secret 读取 REPOS
         run: node generate_star_charts.js
 
       - name: Commit and push changes
@@ -40,6 +40,6 @@ jobs:
           git config user.email "action@github.com"
           git add images/ README.md
           git commit -m "Update star charts and README" || echo "No changes to commit"
-          git push
+          git push origin main
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # 确保推送时使用 Token
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # 确保推送权限
