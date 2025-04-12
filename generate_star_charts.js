@@ -12,15 +12,16 @@ function parseRepoUrls() {
     return [];
   }
 
-  // 转换为 repo 格式（例如 "iawooo/BookNav"）
-  const repos = repoUrls.map(url => {
-    const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
-    if (!match) {
-      console.error(`❌ 无效的项目地址: ${url}`);
-      return null;
-    }
-    return `${match[1]}/${match[2]}`;
-  }).filter(repo => repo);
+  const repos = repoUrls
+    .map(url => {
+      const match = url.match(/github\.com\/([^\/]+)\/([^\/]+)/);
+      if (!match) {
+        console.error(`❌ 无效的项目地址: ${url}`);
+        return null;
+      }
+      return `${match[1]}/${match[2]}`;
+    })
+    .filter(repo => repo);
 
   console.log(`✅ 解析到 ${repos.length} 个有效项目:`, repos);
   return repos;
@@ -38,33 +39,38 @@ async function fetchStargazers(repo) {
   let page = 1;
   const perPage = 100;
 
-  while (true) {
-    console.log(`📡 正在获取 ${repo} 第 ${page} 页星标数据...`);
-    const response = await fetch(
-      `https://api.github.com/repos/${repo}/stargazers?per_page=${perPage}&page=${page}`,
-      {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3.star+json',
-          'User-Agent': 'StarChartGenerator',
-        },
-      }
-    );
+  try {
+    while (true) {
+      console.log(`📡 正在获取 ${repo} 第 ${page} 页星标数据...`);
+      const response = await fetch(
+        `https://api.github.com/repos/${repo}/stargazers?per_page=${perPage}&page=${page}`,
+        {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: 'application/vnd.github.v3.star+json',
+            'User-Agent': 'StarChartGenerator',
+          },
+        }
+      );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ 获取 ${repo} 星标失败: ${response.status} ${response.statusText} - ${errorText}`);
-      return [];
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ 获取 ${repo} 星标失败: ${response.status} ${response.statusText} - ${errorText}`);
+        return [];
+      }
+
+      const stargazers = await response.json();
+      allStargazers = allStargazers.concat(stargazers);
+      if (stargazers.length < perPage) break;
+      page++;
     }
 
-    const stargazers = await response.json();
-    allStargazers = allStargazers.concat(stargazers);
-    if (stargazers.length < perPage) break;
-    page++;
+    console.log(`✅ 成功获取 ${repo} 的 ${allStargazers.length} 条星标数据`);
+    return allStargazers;
+  } catch (err) {
+    console.error(`❌ 获取 ${repo} 星标时发生错误:`, err.message);
+    return [];
   }
-
-  console.log(`✅ 成功获取 ${repo} 的 ${allStargazers.length} 条星标数据`);
-  return allStargazers;
 }
 
 // 计算日期的周数（ISO 8601 周编号）
@@ -79,6 +85,7 @@ function getWeekNumber(date) {
 
 // 生成单个项目的星标图表
 async function generateChartForRepo(repo) {
+  console.log(`🚀 开始生成 ${repo} 的图表`);
   const stargazers = await fetchStargazers(repo);
   if (stargazers.length === 0) {
     console.error(`❌ ${repo} 没有星标数据，跳过图表生成`);
@@ -98,150 +105,155 @@ async function generateChartForRepo(repo) {
   let labels = [];
   let starCounts = [];
 
-  if (totalDays > 0 && totalDays < 30) {
-    // 使用“天”作为单位
-    unit = 'day';
-    const daysDiff = totalDays;
-    starCounts = Array(daysDiff).fill(0);
-    for (let i = daysDiff - 1; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-      const dayStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
-      labels.push(dayStr);
-      const count = stargazers.filter(star => {
-        const starDate = new Date(star.starred_at);
-        return starDate.toDateString() === date.toDateString();
-      }).length;
-      starCounts[daysDiff - 1 - i] = count;
+  try {
+    if (totalDays > 0 && totalDays < 30) {
+      // 使用“天”作为单位
+      unit = 'day';
+      const daysDiff = totalDays;
+      starCounts = Array(daysDiff).fill(0);
+      for (let i = daysDiff - 1; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+        const dayStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+        labels.push(dayStr);
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate.toDateString() === date.toDateString();
+        }).length;
+        starCounts[daysDiff - 1 - i] = count;
+      }
+    } else if (totalDays >= 30 && totalDays < 180) {
+      // 使用“周”作为单位
+      unit = 'week';
+      const weeksDiff = Math.ceil(totalDays / 7);
+      starCounts = Array(weeksDiff).fill(0);
+      for (let i = weeksDiff - 1; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7);
+        const weekStr = getWeekNumber(date);
+        labels.push(weekStr);
+        const startOfWeek = new Date(date);
+        startOfWeek.setDate(date.getDate() - (date.getDay() || 7) + 1);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate >= startOfWeek && starDate <= endOfWeek;
+        }).length;
+        starCounts[weeksDiff - 1 - i] = count;
+      }
+    } else if (totalDays >= 180 && totalDays < 1000) {
+      // 使用“月”作为单位
+      unit = 'month';
+      const monthsDiff = (now.getFullYear() - earliestDate.getFullYear()) * 12 + (now.getMonth() - earliestDate.getMonth()) + 1;
+      starCounts = Array(monthsDiff).fill(0);
+      for (let i = monthsDiff - 1; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+        labels.push(monthStr);
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate.getFullYear() === date.getFullYear() && starDate.getMonth() === date.getMonth();
+        }).length;
+        starCounts[monthsDiff - 1 - i] = count;
+      }
+    } else if (totalDays >= 1000) {
+      // 使用“年”作为单位
+      unit = 'year';
+      const yearsDiff = now.getFullYear() - earliestDate.getFullYear() + 1;
+      starCounts = Array(yearsDiff).fill(0);
+      for (let i = yearsDiff - 1; i >= 0; i--) {
+        const year = now.getFullYear() - i;
+        labels.push(year.toString());
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate.getFullYear() === year;
+        }).length;
+        starCounts[yearsDiff - 1 - i] = count;
+      }
+    } else {
+      console.error(`❌ ${repo} 时间跨度无效，跳过图表生成`);
+      return null;
     }
-  } else if (totalDays >= 30 && totalDays < 180) {
-    // 使用“周”作为单位
-    unit = 'week';
-    const weeksDiff = Math.ceil(totalDays / 7);
-    starCounts = Array(weeksDiff).fill(0);
-    for (let i = weeksDiff - 1; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i * 7);
-      const weekStr = getWeekNumber(date);
-      labels.push(weekStr);
-      const startOfWeek = new Date(date);
-      startOfWeek.setDate(date.getDate() - (date.getDay() || 7) + 1);
-      const endOfWeek = new Date(startOfWeek);
-      endOfWeek.setDate(startOfWeek.getDate() + 6);
-      const count = stargazers.filter(star => {
-        const starDate = new Date(star.starred_at);
-        return starDate >= startOfWeek && starDate <= endOfWeek;
-      }).length;
-      starCounts[weeksDiff - 1 - i] = count;
+
+    // 累加星标数量，生成趋势数据
+    for (let i = 1; i < starCounts.length; i++) {
+      starCounts[i] += starCounts[i - 1];
     }
-  } else if (totalDays >= 180 && totalDays < 1000) {
-    // 使用“月”作为单位
-    unit = 'month';
-    const monthsDiff = (now.getFullYear() - earliestDate.getFullYear()) * 12 + (now.getMonth() - earliestDate.getMonth()) + 1;
-    starCounts = Array(monthsDiff).fill(0);
-    for (let i = monthsDiff - 1; i >= 0; i--) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-      labels.push(monthStr);
-      const count = stargazers.filter(star => {
-        const starDate = new Date(star.starred_at);
-        return starDate.getFullYear() === date.getFullYear() && starDate.getMonth() === date.getMonth();
-      }).length;
-      starCounts[monthsDiff - 1 - i] = count;
-    }
-  } else if (totalDays >= 1000) {
-    // 使用“年”作为单位
-    unit = 'year';
-    const yearsDiff = now.getFullYear() - earliestDate.getFullYear() + 1;
-    starCounts = Array(yearsDiff).fill(0);
-    for (let i = yearsDiff - 1; i >= 0; i--) {
-      const year = now.getFullYear() - i;
-      labels.push(year.toString());
-      const count = stargazers.filter(star => {
-        const starDate = new Date(star.starred_at);
-        return starDate.getFullYear() === year;
-      }).length;
-      starCounts[yearsDiff - 1 - i] = count;
-    }
-  } else {
-    console.error(`❌ ${repo} 时间跨度无效，跳过图表生成`);
+
+    console.log(`📊 ${repo} 选择的显示单位: ${unit}`);
+    console.log(`📊 ${repo} 横坐标标签:`, labels);
+    console.log(`📊 ${repo} 星标数量:`, starCounts);
+    console.log(`📊 ${repo} 总星标数: ${starCounts[starCounts.length - 1]}`);
+
+    // 配置图表
+    const width = 800;
+    const height = 400;
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height });
+
+    const configuration = {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: `${repo} Stars`,
+          data: starCounts,
+          borderColor: 'rgba(75, 192, 192, 1)',
+          fill: true,
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          tension: 0.3,
+        }],
+      },
+      options: {
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Star 数量',
+              font: { size: 14 },
+            },
+            ticks: { font: { size: 12 } },
+          },
+          x: {
+            title: {
+              display: true,
+              text: unit === 'day' ? '日期' : unit === 'week' ? '周' : unit === 'month' ? '月份' : '年份',
+              font: { size: 14 },
+            },
+            ticks: {
+              font: { size: 12 },
+              maxRotation: 45,
+              minRotation: 45,
+            },
+          },
+        },
+        plugins: {
+          legend: {
+            labels: {
+              font: { size: 14 },
+            },
+          },
+          datalabels: {
+            display: true,
+            align: 'top',
+            color: '#666',
+            font: { size: 12 },
+            formatter: (value) => value,
+          },
+        },
+      },
+      plugins: [ChartDataLabels],
+    };
+
+    const imageBuffer = await chartJSNodeCanvas.renderToBuffer(configuration);
+    const repoName = repo.split('/')[1].toLowerCase();
+    const filePath = path.join('images', `${repoName}_star_chart.png`);
+    await fs.writeFile(filePath, imageBuffer);
+    console.log(`✅ ${repo} 图表生成成功: ${filePath}`);
+    return { repo, filePath };
+  } catch (err) {
+    console.error(`❌ 生成 ${repo} 图表时发生错误:`, err.message);
     return null;
   }
-
-  // 累加星标数量，生成趋势数据
-  for (let i = 1; i < starCounts.length; i++) {
-    starCounts[i] += starCounts[i - 1];
-  }
-
-  console.log(`📊 ${repo} 选择的显示单位: ${unit}`);
-  console.log(`📊 ${repo} 横坐标标签:`, labels);
-  console.log(`📊 ${repo} 星标数量:`, starCounts);
-  console.log(`📊 ${repo} 总星标数: ${starCounts[starCounts.length - 1]}`);
-
-  // 配置图表
-  const width = 800;
-  const height = 400;
-  const chartJSNodeCanvas = new ChartJSNodeCanvas({ width, height });
-
-  const configuration = {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [{
-        label: `${repo} Stars`,
-        data: starCounts,
-        borderColor: 'rgba(75, 192, 192, 1)',
-        fill: true,
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        tension: 0.3,
-      }],
-    },
-    options: {
-      scales: {
-        y: {
-          beginAtZero: true,
-          title: {
-            display: true,
-            text: 'Star 数量',
-            font: { size: 14 },
-          },
-          ticks: { font: { size: 12 } },
-        },
-        x: {
-          title: {
-            display: true,
-            text: unit === 'day' ? '日期' : unit === 'week' ? '周' : unit === 'month' ? '月份' : '年份',
-            font: { size: 14 },
-          },
-          ticks: {
-            font: { size: 12 },
-            maxRotation: 45,
-            minRotation: 45,
-          },
-        },
-      },
-      plugins: {
-        legend: {
-          labels: {
-            font: { size: 14 },
-          },
-        },
-        datalabels: {
-          display: true,
-          align: 'top',
-          color: '#666',
-          font: { size: 12 },
-          formatter: (value) => value,
-        },
-      },
-    },
-    plugins: [ChartDataLabels],
-  };
-
-  const imageBuffer = await chartJSNodeCanvas.renderToBuffer(configuration);
-  const repoName = repo.split('/')[1].toLowerCase();
-  const filePath = path.join('images', `${repoName}_star_chart.png`);
-  await fs.writeFile(filePath, imageBuffer);
-  console.log(`✅ ${repo} 图表生成成功: ${filePath}`);
-  return { repo, filePath };
 }
 
 // 主函数：为所有指定项目生成图表
@@ -257,7 +269,7 @@ async function generateAllCharts() {
     await fs.mkdir('images', { recursive: true });
     console.log('📁 images 目录已准备就绪');
   } catch (err) {
-    console.error('❌ 创建 images 目录失败:', err);
+    console.error('❌ 创建 images 目录失败:', err.message);
   }
 
   // 为每个项目生成图表
@@ -275,12 +287,16 @@ async function generateAllCharts() {
     readmeContent += `### ${repoName}\n[![${repoName} Star Chart](${filePath})](https://github.com/${repo})\n\n`;
   }
   readmeContent += `## License\nThis project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.\n\nIf you fork, modify, or redistribute this project, please include a reference to the original repository:  \nhttps://github.com/iawooo/StarCharts\n`;
-  await fs.writeFile('README.md', readmeContent);
-  console.log('✅ README.md 已更新');
+  try {
+    await fs.writeFile('README.md', readmeContent);
+    console.log('✅ README.md 已更新');
+  } catch (err) {
+    console.error('❌ 更新 README.md 失败:', err.message);
+  }
 }
 
 // 运行脚本
 generateAllCharts().catch(err => {
-  console.error('❌ 生成图表时发生错误:', err);
+  console.error('❌ 生成图表时发生错误:', err.message);
   process.exit(1);
 });
