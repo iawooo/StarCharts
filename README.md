@@ -10,6 +10,9 @@ A collection of star history charts for my GitHub projects, automatically update
 ### ctt
 [![ctt Star Chart](images/ctt_star_chart.png)](https://github.com/iawooo/ctt)
 
+### cftc
+[![cftc Star Chart](images/cftc_star_chart.png)](https://github.com/iawooo/cftc)
+
 ## License
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
