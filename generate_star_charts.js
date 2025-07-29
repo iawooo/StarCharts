@@ -55,8 +55,8 @@ async function fetchStargazers(repo) {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`❌ 获取 ${repo} 星标失败: ${response.status} ${response.statusText} - ${errorText}`);
-        return [];
+        // 改进错误处理：抛出异常而不是返回空数组
+        throw new Error(`获取 ${repo} 星标失败: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const stargazers = await response.json();
@@ -69,9 +69,45 @@ async function fetchStargazers(repo) {
     return allStargazers;
   } catch (err) {
     console.error(`❌ 获取 ${repo} 星标时发生错误:`, err.message);
-    return [];
+    // 将错误继续向上抛出
+    throw err;
   }
 }
+
+// 获取单个仓库的创建日期
+async function fetchRepoCreationDate(repo) {
+    const token = process.env.GH_TOKEN;
+    if (!token) {
+      console.warn('⚠️ GH_TOKEN 未设置，可能会遇到 API 速率限制');
+    }
+  
+    try {
+      console.log(`📡 正在获取 ${repo} 的创建日期...`);
+      const response = await fetch(
+        `https://api.github.com/repos/${repo}`,
+        {
+          headers: {
+            Authorization: `token ${token}`,
+            Accept: 'application/vnd.github.v3+json',
+            'User-Agent': 'StarChartGenerator',
+          },
+        }
+      );
+  
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`获取 ${repo} 创建日期失败: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+  
+      const repoData = await response.json();
+      console.log(`✅ 成功获取 ${repo} 的创建日期: ${repoData.created_at}`);
+      return new Date(repoData.created_at);
+    } catch (err) {
+      console.error(`❌ 获取 ${repo} 创建日期时发生错误:`, err.message);
+      throw err; // 抛出错误，让上层处理
+    }
+}
+
 
 // 计算日期的周数（ISO 8601 周编号）
 function getWeekNumber(date) {
@@ -87,32 +123,57 @@ function getWeekNumber(date) {
 async function generateChartForRepo(repo) {
   console.log(`🚀 开始生成 ${repo} 的图表`);
   try {
-    // 并行获取 star 数据和仓库创建日期，效率更高
+    // 并行获取 star 数据和仓库创建日期
     const [stargazers, creationDate] = await Promise.all([
       fetchStargazers(repo),
       fetchRepoCreationDate(repo)
     ]);
 
-    // earliestDate 现在是仓库的创建日期
     const earliestDate = creationDate;
     const now = new Date();
-
-    // 计算总天数，从创建日开始算
     const totalDays = Math.ceil((now - earliestDate) / (1000 * 60 * 60 * 24));
     console.log(`📊 ${repo} 总天数 (自创建以来): ${totalDays}`);
 
-    // 根据时间跨度选择显示单位
     let unit;
     let labels = [];
     let starCounts = [];
 
-    // 这部分的 if/else 逻辑和之前类似，但现在它会从0开始计算
+    // --- 这里是修正和补全的核心部分 ---
     if (totalDays >= 0 && totalDays < 30) {
-      // (代码逻辑与原版类似，但因为 earliestDate 变了，所以会从创建日开始)
-      // ...
+      // 使用“天”作为单位
+      unit = 'day';
+      starCounts = Array(totalDays).fill(0);
+      for (let i = 0; i < totalDays; i++) {
+        const date = new Date(earliestDate);
+        date.setDate(earliestDate.getDate() + i);
+        const dayStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+        labels.push(dayStr);
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate.toDateString() === date.toDateString();
+        }).length;
+        starCounts[i] = count;
+      }
     } else if (totalDays >= 30 && totalDays < 180) {
-      // (代码逻辑与原版类似)
-      // ...
+      // 使用“周”作为单位
+      unit = 'week';
+      const weeksDiff = Math.ceil(totalDays / 7);
+      starCounts = Array(weeksDiff).fill(0);
+      for (let i = 0; i < weeksDiff; i++) {
+        const startOfWeek = new Date(earliestDate);
+        startOfWeek.setDate(earliestDate.getDate() + i * 7);
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        
+        const weekStr = getWeekNumber(startOfWeek);
+        labels.push(weekStr);
+
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate >= startOfWeek && starDate <= endOfWeek;
+        }).length;
+        starCounts[i] = count;
+      }
     } else if (totalDays >= 180 && totalDays < 1000) {
       // 使用“月”作为单位
       unit = 'month';
@@ -129,8 +190,19 @@ async function generateChartForRepo(repo) {
         starCounts[i] = count;
       }
     } else if (totalDays >= 1000) {
-      // (代码逻辑与原版类似)
-      // ...
+      // 使用“年”作为单位
+      unit = 'year';
+      const yearsDiff = now.getFullYear() - earliestDate.getFullYear() + 1;
+      starCounts = Array(yearsDiff).fill(0);
+      for (let i = 0; i < yearsDiff; i++) {
+        const year = earliestDate.getFullYear() + i;
+        labels.push(year.toString());
+        const count = stargazers.filter(star => {
+          const starDate = new Date(star.starred_at);
+          return starDate.getFullYear() === year;
+        }).length;
+        starCounts[i] = count;
+      }
     } else {
       console.error(`❌ ${repo} 时间跨度无效，跳过图表生成`);
       return null;
@@ -215,42 +287,9 @@ async function generateChartForRepo(repo) {
     console.log(`✅ ${repo} 图表生成成功: ${filePath}`);
     return { repo, filePath };
   } catch (err) {
-    console.error(`❌ 生成 ${repo} 图表时发生严重错误:`, err.message);
+    // 捕获来自 fetchStargazers 和 fetchRepoCreationDate 的错误
+    console.error(`❌ 生成 ${repo} 图表时发生严重错误，已跳过:`, err.message);
     return null;
-  }
-}
-
-async function fetchRepoCreationDate(repo) {
-  const token = process.env.GH_TOKEN;
-  if (!token) {
-    // 如果没有 token，虽然公共仓库也能访问，但为了统一和避免速率限制，最好还是提示
-    console.warn('⚠️ GH_TOKEN 未设置，可能会遇到 API 速率限制');
-  }
-
-  try {
-    console.log(`📡 正在获取 ${repo} 的创建日期...`);
-    const response = await fetch(
-      `https://api.github.com/repos/${repo}`,
-      {
-        headers: {
-          Authorization: `token ${token}`,
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'StarChartGenerator',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`获取 ${repo} 创建日期失败: ${response.status} ${response.statusText} - ${errorText}`);
-    }
-
-    const repoData = await response.json();
-    console.log(`✅ 成功获取 ${repo} 的创建日期: ${repoData.created_at}`);
-    return new Date(repoData.created_at);
-  } catch (err) {
-    console.error(`❌ 获取 ${repo} 创建日期时发生错误:`, err.message);
-    throw err; // 抛出错误，让上层处理
   }
 }
 
@@ -273,7 +312,7 @@ async function generateAllCharts() {
   // 为每个项目生成图表
   const results = [];
   for (const repo of repos) {
-    console.log(`🚀 开始处理 ${repo}`);
+    console.log(`\n🚀 开始处理 ${repo}`);
     const result = await generateChartForRepo(repo);
     if (result) results.push(result);
   }
@@ -287,7 +326,7 @@ async function generateAllCharts() {
   readmeContent += `## License\nThis project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.\n\nIf you fork, modify, or redistribute this project, please include a reference to the original repository:  \nhttps://github.com/iawooo/StarCharts\n`;
   try {
     await fs.writeFile('README.md', readmeContent);
-    console.log('✅ README.md 已更新');
+    console.log('\n✅ README.md 已更新');
   } catch (err) {
     console.error('❌ 更新 README.md 失败:', err.message);
   }
@@ -295,6 +334,6 @@ async function generateAllCharts() {
 
 // 运行脚本
 generateAllCharts().catch(err => {
-  console.error('❌ 生成图表时发生错误:', err.message);
+  console.error('❌ 脚本执行过程中发生未捕获的顶级错误:', err.message);
   process.exit(1);
 });
