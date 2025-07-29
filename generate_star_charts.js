@@ -260,6 +260,40 @@ async function generateChartForRepo(repo) {
   }
 }
 
+async function fetchRepoCreationDate(repo) {
+  const token = process.env.GH_TOKEN;
+  if (!token) {
+    // 如果没有 token，虽然公共仓库也能访问，但为了统一和避免速率限制，最好还是提示
+    console.warn('⚠️ GH_TOKEN 未设置，可能会遇到 API 速率限制');
+  }
+
+  try {
+    console.log(`📡 正在获取 ${repo} 的创建日期...`);
+    const response = await fetch(
+      `https://api.github.com/repos/${repo}`,
+      {
+        headers: {
+          Authorization: `token ${token}`,
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'StarChartGenerator',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`获取 ${repo} 创建日期失败: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const repoData = await response.json();
+    console.log(`✅ 成功获取 ${repo} 的创建日期: ${repoData.created_at}`);
+    return new Date(repoData.created_at);
+  } catch (err) {
+    console.error(`❌ 获取 ${repo} 创建日期时发生错误:`, err.message);
+    throw err; // 抛出错误，让上层处理
+  }
+}
+
 // 主函数：为所有指定项目生成图表
 async function generateAllCharts() {
   const repos = parseRepoUrls();
