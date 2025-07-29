@@ -241,7 +241,7 @@ async function generateChartForRepo(repo) {
       options: {
         scales: {
           y: {
-            beginAtZero: true,
+            min: 0, // 强制 Y 轴从 0 开始
             title: {
               display: true,
               text: 'Star 数量',
