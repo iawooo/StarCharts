@@ -138,9 +138,8 @@ async function generateChartForRepo(repo) {
     let labels = [];
     let starCounts = [];
 
-    // --- 这里是修正和补全的核心部分 ---
+    // 按天、周、月、年生成基础数据
     if (totalDays >= 0 && totalDays < 30) {
-      // 使用“天”作为单位
       unit = 'day';
       starCounts = Array(totalDays).fill(0);
       for (let i = 0; i < totalDays; i++) {
@@ -155,7 +154,6 @@ async function generateChartForRepo(repo) {
         starCounts[i] = count;
       }
     } else if (totalDays >= 30 && totalDays < 180) {
-      // 使用“周”作为单位
       unit = 'week';
       const weeksDiff = Math.ceil(totalDays / 7);
       starCounts = Array(weeksDiff).fill(0);
@@ -164,10 +162,8 @@ async function generateChartForRepo(repo) {
         startOfWeek.setDate(earliestDate.getDate() + i * 7);
         const endOfWeek = new Date(startOfWeek);
         endOfWeek.setDate(startOfWeek.getDate() + 6);
-        
         const weekStr = getWeekNumber(startOfWeek);
         labels.push(weekStr);
-
         const count = stargazers.filter(star => {
           const starDate = new Date(star.starred_at);
           return starDate >= startOfWeek && starDate <= endOfWeek;
@@ -175,7 +171,6 @@ async function generateChartForRepo(repo) {
         starCounts[i] = count;
       }
     } else if (totalDays >= 180 && totalDays < 1000) {
-      // 使用“月”作为单位
       unit = 'month';
       const monthsDiff = (now.getFullYear() - earliestDate.getFullYear()) * 12 + (now.getMonth() - earliestDate.getMonth()) + 1;
       starCounts = Array(monthsDiff).fill(0);
@@ -190,7 +185,6 @@ async function generateChartForRepo(repo) {
         starCounts[i] = count;
       }
     } else if (totalDays >= 1000) {
-      // 使用“年”作为单位
       unit = 'year';
       const yearsDiff = now.getFullYear() - earliestDate.getFullYear() + 1;
       starCounts = Array(yearsDiff).fill(0);
@@ -204,9 +198,16 @@ async function generateChartForRepo(repo) {
         starCounts[i] = count;
       }
     } else {
-      console.error(`❌ ${repo} 时间跨度无效，跳过图表生成`);
-      return null;
+        console.error(`❌ ${repo} 时间跨度无效，跳过图表生成`);
+        return null;
     }
+
+    // --- 核心修改在这里 ---
+    // 在计算累加数据前，手动将创建日期和 0 计数值插入到数组的最前面
+    const creationDateStr = `${creationDate.getFullYear()}-${(creationDate.getMonth() + 1).toString().padStart(2, '0')}-${creationDate.getDate().toString().padStart(2, '0')}`;
+    labels.unshift(creationDateStr);
+    starCounts.unshift(0);
+    // --- 修改结束 ---
 
     // 累加星标数量，生成趋势数据
     for (let i = 1; i < starCounts.length; i++) {
@@ -287,7 +288,6 @@ async function generateChartForRepo(repo) {
     console.log(`✅ ${repo} 图表生成成功: ${filePath}`);
     return { repo, filePath };
   } catch (err) {
-    // 捕获来自 fetchStargazers 和 fetchRepoCreationDate 的错误
     console.error(`❌ 生成 ${repo} 图表时发生严重错误，已跳过:`, err.message);
     return null;
   }
