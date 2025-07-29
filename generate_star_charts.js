@@ -184,6 +184,10 @@ async function generateChartForRepo(repo) {
     console.log(`📊 ${repo} 星标数量:`, starCounts);
     console.log(`📊 ${repo} 总星标数: ${starCounts[starCounts.length - 1]}`);
 
+    // 在末尾添加 "Now" 数据点
+    labels.push('Now');
+    starCounts.push(starCounts[starCounts.length - 1]);
+
     // 配置图表
     const width = 800;
     const height = 400;
